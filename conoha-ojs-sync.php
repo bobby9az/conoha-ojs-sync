@@ -23,7 +23,7 @@ use OpenCloud\Openstack;
 use Guzzle\Http\Exception\ClientErrorResponseException;
 
 function add_pages() {
-    $r = add_submenu_page('options-general.php', "ConoHa Object Store", "ConoHa Object Sync", 8, __FILE__, 'option_page');
+    $r = add_submenu_page('options-general.php', "ConoHa Object Store", "ConoHa Object Sync", 'administrator', __FILE__, 'option_page');
 }
 
 function option_page() {
