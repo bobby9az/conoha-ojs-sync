@@ -1,13 +1,13 @@
 <?php
 
 /**
- * Plugin Name: ConoHa Object Sync
- * Plugin URI: https://github.com/hironobu-s/conoha-ojs-sync
+ * Plugin Name: ConoHa Object Sync Mirai-Edits
+ * Plugin URI: https://github.com/shouta65/conoha-ojs-sync
  * Description: This WordPress plugin allows you to upload files from the library to ConoHa Object Storage or other OpenStack Swift-based Object Store.
- * Author: Hironobu Saitoh
- * Author URI: https://github.com/hironobu-s
+ * Author: @YuukiMirai
+ * Author URI: https://github.com/shouta65
  * Text Domain: conoha-ojs-sync
- * Version: 0.2
+ * Version: 0.2.2
  * License: GPLv2
 */
 
@@ -32,17 +32,18 @@ function option_page() {
     wp_enqueue_style('conohaojs-style', plugins_url('style/conohaojs.css', __FILE__));
 
     // Default options
-    if (get_option('conohaojs-region') == null) {
+    // 環境によって強制的に値が上書きされる不具合を修正
+    if (get_option('conohaojs-region', null) === null) {
         update_option('conohaojs-region', 'tyo1');
     }
-    if (get_option('conohaojs-servicename') == null) {
+    if (get_option('conohaojs-servicename', null) === null) {
         update_option('conohaojs-servicename', 'Object Storage Service');
     }
-    if (get_option('conohaojs-auth-url') == null) {
+    if (get_option('conohaojs-auth-url', null) === null) {
         update_option('conohaojs-auth-url', 'https://identity.tyo1.conoha.io/v2.0');
     }
 
-    if (get_option('conohaojs-delobject') == null) {
+    if (get_option('conohaojs-delobject', null) === null) {
         update_option('conohaojs-delobject', 1);
     }
 
@@ -205,15 +206,16 @@ function conohaojs_thumb_upload($metadatas) {
     }
 
     $dir = wp_upload_dir();
-    foreach($metadatas['sizes'] as $thumb) {
+    foreach($metadatas['sizes'] as $thumbId => $thumb) {
         $file = $dir['path'] . DIRECTORY_SEPARATOR . $thumb['file'];
-        if( ! __file_has_upload_extensions($path)) {
+        if( ! __file_has_upload_extensions(__generate_object_name_from_path($file))) {
             return false;
         }
 
         if( ! __upload_object($file)) {
             throw new Exception("upload error");
         }
+        $metadatas['sizes'][$thumbId]['file'] = __generate_object_name_from_path($file);
     }
 
     return $metadatas;
@@ -269,7 +271,8 @@ if(get_option("conohaojs-delobject") == 1) {
     add_filter('wp_delete_file', 'conohaojs_delete_object');
 }
 
-add_filter('wp_handle_upload_prefilter', 'conohaojs_modify_uploadfilename' );
+// 強制的にIDを書き換えるのを停止
+// add_filter('wp_handle_upload_prefilter', 'conohaojs_modify_uploadfilename' );
 
 add_filter('wp_get_attachment_url', 'conohaojs_object_storage_url');
 
@@ -467,3 +470,66 @@ function __get_object_store_service($username = null,
     }
     return $service;
 }
+
+
+
+// WP-Cli Commands
+
+function conohaojs_cli_resync( $args ) {
+    WP_CLI::log('Invoke: Conoha Object Storage: Resync');
+
+    $args = array(
+        'post_type' => 'attachment',
+        'numberposts' => null,
+        'post_status' => null,
+        'post_parent' => null,
+        'orderby' => null,
+        'order' => null,
+        'exclude' => null,
+    );
+
+    $attachments = get_posts($args);
+    if( ! $attachments) {
+        return array();
+    }
+
+    $attach_count = count($attachments);
+    WP_CLI::log( sprintf( 'Found %d item(s)', $attach_count ) );
+
+    
+    foreach($attachments as $attach) {
+        $path = get_attached_file($attach->ID);
+        $name = __generate_object_name_from_path($path);
+        $obj = __head_object($name);
+
+        $do_upload = false;
+        if( ! $obj OR ! file_exists($path)) {
+            $do_upload = true;
+
+        } else {
+            $mod1 = new DateTime($obj->getLastModified());
+            $mod2 = new DateTime("@".filemtime($path));
+
+            $d = $mod2->diff($mod1);
+            if($d->invert === 1) {
+                $do_upload = true;
+            }
+        }
+
+        // Upload object if it isn't exists.
+        if( ! $obj) {
+            if (!conohaojs_upload_file($attach->ID)) {
+                WP_CLI::error( sprintf( '%s: Upload failed.', $name ) );
+            } else {
+                WP_CLI::success( sprintf( '%s: Uploaded.', $name ) );
+            }
+        } else {
+            WP_CLI::success( sprintf( '%s: Already uploaded.', $name ) );
+        }
+    }
+    //*/
+    WP_CLI::log( 'Running "wp media regenerate" for upload thumbnails to ConoHa Object Storage...' );
+    WP_CLI::run_command( array( 'media', 'regenerate', '--yes' ) );
+}
+
+WP_CLI::add_command( 'conoha-ojs-resync',  'conohaojs_cli_resync');
