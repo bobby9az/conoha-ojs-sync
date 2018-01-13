@@ -475,61 +475,63 @@ function __get_object_store_service($username = null,
 
 // WP-Cli Commands
 
-function conohaojs_cli_resync( $args ) {
-    WP_CLI::log('Invoke: Conoha Object Storage: Resync');
-
-    $args = array(
-        'post_type' => 'attachment',
-        'numberposts' => null,
-        'post_status' => null,
-        'post_parent' => null,
-        'orderby' => null,
-        'order' => null,
-        'exclude' => null,
-    );
-
-    $attachments = get_posts($args);
-    if( ! $attachments) {
-        return array();
-    }
-
-    $attach_count = count($attachments);
-    WP_CLI::log( sprintf( 'Found %d item(s)', $attach_count ) );
-
+if(defined('WP_CLI') && WP_CLI != null) {
+    function conohaojs_cli_resync( $args ) {
+        WP_CLI::log('Invoke: Conoha Object Storage: Resync');
     
-    foreach($attachments as $attach) {
-        $path = get_attached_file($attach->ID);
-        $name = __generate_object_name_from_path($path);
-        $obj = __head_object($name);
-
-        $do_upload = false;
-        if( ! $obj OR ! file_exists($path)) {
-            $do_upload = true;
-
-        } else {
-            $mod1 = new DateTime($obj->getLastModified());
-            $mod2 = new DateTime("@".filemtime($path));
-
-            $d = $mod2->diff($mod1);
-            if($d->invert === 1) {
+        $args = array(
+            'post_type' => 'attachment',
+            'numberposts' => null,
+            'post_status' => null,
+            'post_parent' => null,
+            'orderby' => null,
+            'order' => null,
+            'exclude' => null,
+        );
+    
+        $attachments = get_posts($args);
+        if( ! $attachments) {
+            return array();
+        }
+    
+        $attach_count = count($attachments);
+        WP_CLI::log( sprintf( 'Found %d item(s)', $attach_count ) );
+    
+        
+        foreach($attachments as $attach) {
+            $path = get_attached_file($attach->ID);
+            $name = __generate_object_name_from_path($path);
+            $obj = __head_object($name);
+    
+            $do_upload = false;
+            if( ! $obj OR ! file_exists($path)) {
                 $do_upload = true;
-            }
-        }
-
-        // Upload object if it isn't exists.
-        if( ! $obj) {
-            if (!conohaojs_upload_file($attach->ID)) {
-                WP_CLI::error( sprintf( '%s: Upload failed.', $name ) );
+    
             } else {
-                WP_CLI::success( sprintf( '%s: Uploaded.', $name ) );
+                $mod1 = new DateTime($obj->getLastModified());
+                $mod2 = new DateTime("@".filemtime($path));
+    
+                $d = $mod2->diff($mod1);
+                if($d->invert === 1) {
+                    $do_upload = true;
+                }
             }
-        } else {
-            WP_CLI::success( sprintf( '%s: Already uploaded.', $name ) );
+    
+            // Upload object if it isn't exists.
+            if( ! $obj) {
+                if (!conohaojs_upload_file($attach->ID)) {
+                    WP_CLI::error( sprintf( '%s: Upload failed.', $name ) );
+                } else {
+                    WP_CLI::success( sprintf( '%s: Uploaded.', $name ) );
+                }
+            } else {
+                WP_CLI::success( sprintf( '%s: Already uploaded.', $name ) );
+            }
         }
+        //*/
+        WP_CLI::log( 'Running "wp media regenerate" for upload thumbnails to ConoHa Object Storage...' );
+        WP_CLI::runcommand( 'media regenerate --yes' );
     }
-    //*/
-    WP_CLI::log( 'Running "wp media regenerate" for upload thumbnails to ConoHa Object Storage...' );
-    WP_CLI::run_command( array( 'media', 'regenerate', '--yes' ) );
+    
+    WP_CLI::add_command( 'conoha-ojs-resync',  'conohaojs_cli_resync');
 }
-
-WP_CLI::add_command( 'conoha-ojs-resync',  'conohaojs_cli_resync');
