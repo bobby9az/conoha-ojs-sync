@@ -1,6 +1,7 @@
 {
     "require": {
-	"php": ">=5.3.3",
-	"rackspace/php-opencloud": "dev-master"
+        "php": ">=7.2.5|>=8.0",
+        "php-opencloud/openstack": "^3.2",
+        "guzzlehttp/guzzle": "7.3"
     }
 }
